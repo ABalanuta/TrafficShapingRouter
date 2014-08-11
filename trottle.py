@@ -129,6 +129,10 @@ class TShapper(Thread):
 		Thread.__init__(self)
 		self.stopped = False
 		self.active_filters = 0
+		self.speed = {	'Down'			: 0,
+						'Up'			: 0,
+						'Last_Update'	: datetime.now()
+					}
 		self.filter = Filter()
 		self.generate_tokens()
 
@@ -168,7 +172,7 @@ class TShapper(Thread):
 
 		self.clean_old_devices()
 
-		print "Clients:"+str(len(self.DEVICES))+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)
+		print "Clients:"+str(len(self.DEVICES))+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
 
 
 	def clean_old_devices(self):
@@ -271,6 +275,26 @@ class TShapper(Thread):
 
 		return clients
 
+
+	def get_speed(self):
+		proc    = subprocess.Popen('ifconfig '+self.filter.WAN_INTERFACE+" | grep 'RX bytes'", shell=True, stdout=subprocess.PIPE)
+		output  = proc.communicate()
+		line   = output[0].split('\n')[0]
+		
+		new_Down = int(line.split(':')[1].split()[0])
+		new_Up = int(line.split(':')[2].split()[0])
+		new_Time = datetime.now()
+
+		interval = (new_Time-self.speed["Last_Update"]).total_seconds()
+		down_Speed = round(((new_Down-self.speed["Down"])*8/interval)/1000000, 2) 	#Mbits/s
+		up_Speed = round(((new_Up-self.speed["Up"])*8/interval)/1000000, 2) 			#Mbits/s
+
+		self.speed = {	'Down'			: new_Down,
+						'Up'			: new_Up,
+						'Last_Update'	: new_Time
+					}
+
+		return " Down/Up: "+str(down_Speed) + "/" + str(up_Speed)+" Mbps"	
 
 ##Executed if only is the main app
 if __name__ == '__main__':
