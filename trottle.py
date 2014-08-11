@@ -7,28 +7,130 @@ from time import sleep
 from threading import Thread
 from datetime import datetime
 
+class Filter():
+
+	LAN_INTERFACE	= "eth0"
+	WAN_INTERFACE 	= "eth1"
+
+	DEF_HTB_RATE	= "15Mbit"	#Rate of the def bucket
+	USER_UP_RATE 	= "2Mbit"	
+	USER_DOWN_RATE 	= "5Mbit"
+
+	wan_ip_prefs	= set()
+	lan_ip_prefs	= set()
+
+	def console(self, exe):
+		print exe
+		subprocess.call(exe, shell=True)
+
+	def destroy_tc_rules(self):
+		print "Destroy Rules"
+
+		#Delete rules
+		self.console('tc qdisc del dev '+self.WAN_INTERFACE+' root')
+		self.console('tc qdisc del dev '+self.LAN_INTERFACE+' root')
+
+	def init_tc_rules(self):
+		
+		#Delete previous rules
+		self.console('tc qdisc del dev '+self.WAN_INTERFACE+' root')
+		self.console('tc qdisc del dev '+self.LAN_INTERFACE+' root')
+
+		self.console('tc qdisc add dev '+self.WAN_INTERFACE+' root handle 1:0 htb default FFFF')
+		self.console('tc class add dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:FFFF htb rate '+self.DEF_HTB_RATE+' ceil '+self.DEF_HTB_RATE+' prio 0')
+
+		self.console('tc qdisc add dev '+self.LAN_INTERFACE+' root handle 1:0 htb default FFFF')
+		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:FFFF htb rate '+self.DEF_HTB_RATE+' ceil '+self.DEF_HTB_RATE+' prio 0')
+
+	#Creates a new TC Filter Rule
+	def tc_add_device(self, obj):
+		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_RATE+' prio 0')
+		self.console('tc class add dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_UP_RATE+' ceil '+self.USER_UP_RATE+' prio 0')
+
+	def tc_del_device(self, obj):
+		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_RATE+' prio 0')
+
+	def tc_add_filter(self, token, ip, obj):
+		#IPv6
+		if ':' in ip:
+			self.tc_add_filter_IPv6(token, ip, obj)
+		#IPv4
+		elif '.' in ip:
+			self.tc_add_filter_IPv4(token, ip, obj)
+			
+	def tc_add_filter_IPv4(self, token, ip, obj):
+		self.console('tc filter add dev '+self.LAN_INTERFACE+' protocol ip parent 1:0 prio 0 u32 match ip dst '+ip+' flowid 1:'+str(token))
+		pref = self.tc_get_new_filter_pref(self.LAN_INTERFACE)
+		obj["prefs"]["lan"][ip] = pref
+		self.lan_ip_prefs |= pref
+
+		self.console('tc filter add dev '+self.WAN_INTERFACE+' protocol ip parent 1:0 prio 0 u32 match ip src '+ip+' flowid 1:'+str(token))
+		pref = self.tc_get_new_filter_pref(self.WAN_INTERFACE)
+		obj["prefs"]["wan"][ip] = pref
+		self.wan_ip_prefs |= pref
+
+	def tc_add_filter_IPv6(self, token, ip, obj):
+		self.console('tc filter add dev '+self.LAN_INTERFACE+' protocol ipv6 parent 1:0 prio 0 u32 match ip6 dst '+ip+' flowid 1:'+str(token))
+		pref = self.tc_get_new_filter_pref(self.LAN_INTERFACE)
+		obj["prefs"]["lan"][ip] = pref
+		self.lan_ip_prefs |= pref
+
+		self.console('tc filter add dev '+self.WAN_INTERFACE+' protocol ipv6 parent 1:0 prio 0 u32 match ip6 src '+ip+' flowid 1:'+str(token))
+		pref = self.tc_get_new_filter_pref(self.WAN_INTERFACE)
+		obj["prefs"]["wan"][ip] = pref
+		self.wan_ip_prefs |= pref
+
+	def tc_del_filter(self, token, ip, obj):
+
+		#Delete LAN filters
+		for pref in obj["prefs"]["lan"][ip]:
+			self.console('tc filter del dev '+self.LAN_INTERFACE+' pref '+pref)
+		self.lan_ip_prefs = self.lan_ip_prefs - obj["prefs"]["lan"][ip]
+		del obj["prefs"]["lan"][ip]
+
+		#Delete WAN filters
+		for pref in obj["prefs"]["wan"][ip]:
+			self.console('tc filter del dev '+self.WAN_INTERFACE+' pref '+pref)
+		self.wan_ip_prefs = self.wan_ip_prefs - obj["prefs"]["wan"][ip]
+		del obj["prefs"]["wan"][ip]
+
+	#Returns the id of the filter
+	def tc_get_new_filter_pref(self, interface):
+		prefs   = set()
+		proc    = subprocess.Popen('tc -p filter list dev '+interface+' parent 1:0', shell=True, stdout=subprocess.PIPE)
+		output  = proc.communicate()
+		lines   = output[0].split('\n')
+		for line in lines:
+			if 'pref' in line:
+				words = line.split()
+				pref = words[words.index('pref')+1]
+				prefs = prefs | set([pref])
+
+		if interface == self.WAN_INTERFACE:
+			return prefs - self.wan_ip_prefs
+
+		elif interface == self.LAN_INTERFACE:
+			return prefs - self.lan_ip_prefs
+
+	def tc_del_class(self, token):
+		self.console('tc class del dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(token))
+		self.console('tc class del dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:'+str(token))
 
 class TShapper(Thread):
 
-	LAN_INTERFACE 			= "eth0"
-	WAN_INTERFACE 			= "eth1"
-
-	N_TOKENS        		= 3000
+	N_TOKENS        		= 9000
 	TOKENS 					= list()
 	DEVICES 				= dict()
 
 	SLEEP_INTERVAL  		= 0.75		#Seconds
-	OLD_DEVICES_TIMEOUT 	= 3 	#Seconds
-
-	DEF_HTB_RATE			= "8Mbit"
-	USER_HTB_RATE			= "100Mbit"
-
+	OLD_DEVICES_TIMEOUT 	= 3 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
 		self.stopped = False
+		self.active_filters = 0
+		self.filter = Filter()
 		self.generate_tokens()
-
 
 	def generate_tokens(self):
 		for i in range(1, self.N_TOKENS+1):
@@ -46,15 +148,15 @@ class TShapper(Thread):
 	def run(self):
 
 		#Starts the new TC Rules
-		self.init_tc_rules()
+		self.filter.init_tc_rules()
 
-		#Modifies the TC Rules
+		#Updates the TC Rules
 		while not self.stopped:
 			self.update()
 			sleep(self.SLEEP_INTERVAL)
 
 		#Deletes the TC Rules
-		self.destroy_tc_rules()
+		self.filter.destroy_tc_rules()
 
 	def update(self):
 		print "Update"
@@ -66,57 +168,47 @@ class TShapper(Thread):
 
 		self.clean_old_devices()
 
-		print "Clients:"+str(len(self.DEVICES))+" TokensLeft:"+str(len(self.TOKENS))
-
-	def destroy_tc_rules(self):
-		pass
-
-	def init_tc_rules(self):
-		cmd = 'tc qdisc del dev '+self.LAN_INTERFACE+' root'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-
-		cmd = 'tc qdisc del dev '+self.WAN_INTERFACE+' root'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-
-		cmd = 'tc qdisc add dev '+self.LAN_INTERFACE+' root handle 1:0 htb default FFFF'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-
-		cmd = 'tc qdisc add dev '+self.WAN_INTERFACE+' root handle 1:0 htb default FFFF'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-
-		cmd = 'tc class add dev '+self.LAN_INTERFACE+' 1:0 classid 1:FFFF htb rate '+self.DEF_HTB_RATE+' ceil '+self.DEF_HTB_RATE+' prio 0'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-
-		cmd = 'tc class add dev '+self.WAN_INTERFACE+' 1:0 classid 1:FFFF htb rate '+self.DEF_HTB_RATE+' ceil '+self.DEF_HTB_RATE+' prio 0'
-		print cmd 
-		subprocess.call(cmd, shell=True)
-        
+		print "Clients:"+str(len(self.DEVICES))+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)
 
 
 	def clean_old_devices(self):
 		for device_mac, obj in self.DEVICES.items():
 			if (datetime.now() - obj["last_seen"]).total_seconds() > self.OLD_DEVICES_TIMEOUT:
 				print "Delete Client: "+device_mac
-				token = self.DEVICES[device_mac]["token"]
+				obj = self.DEVICES[device_mac]
+				token = obj["token"]
+
+				#Delete Filters
+				for ip in obj["ips"]:
+					self.filter.tc_del_filter(token, ip, obj)
+					self.active_filters -= 2
+
+				#Delete Class
+				self.filter.tc_del_class(token)
+
 				del self.DEVICES[device_mac]
 				self.release_token(token)
+				
 
 	def update_device(self, device_mac, ips):
 		
 		#Add new Device
 		if device_mac not in self.DEVICES.keys():
-			token = self.get_token()
-			obj	  = { 	"token":token,
+			obj	  = { 	"mac":device_mac,
+						"token":self.get_token(),
 						"ips":ips,
-						"last_seen":datetime.now()
+						"last_seen":datetime.now(),
+						"prefs": {
+									"lan": dict(),
+									"wan": dict()
+								}
 					}
 			self.DEVICES[device_mac] = obj
-			self.update_rules(device_mac, obj)
+
+			self.filter.tc_add_device(obj)
+			for ip in ips:
+				self.filter.tc_add_filter(obj['token'], ip, obj)
+				self.active_filters += 2
 
 		#Modify Existing Device Rules
 		else:
@@ -130,26 +222,35 @@ class TShapper(Thread):
 
 			if len(ips_to_add) > 0:
 				print "New IPs "+str(ips_to_add)+" for MAC "+device_mac
+				for ip in ips_to_add:
+					self.filter.tc_add_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
+					self.active_filters += 2
 
 			if len(ips_to_delete) > 0:
 				print "Delete IPs "+str(ips_to_delete)+" for MAC "+device_mac
-
-			#self.update_rules_add(device_mac, ips_to_add)
-			#self.update_rules_del(device_mac, ips_to_delete)
-
-	def update_rules(self, device_mac, ips):
-		pass
+				for ip in ips_to_delete:
+					self.filter.tc_del_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
+					self.active_filters -= 2
 
 	def print_devices(self):
 		for device, obj in self.DEVICES.items():
-			print device, obj
+			print "\n"+device
+			for name, value in obj.items():
+				if name == "prefs":
+					print "\t\t"+name+":"
+					for x, v in value["lan"].items():
+						print "\t\t\tlan\t", x, v
+					for x, v in value["wan"].items():
+						print "\t\t\twan\t", x, v
+				else:
+					print "\t\t"+name+":", value
 
+	#Grabs device adresses
 	def get_devices_adresses(self):
 		
-		proc = subprocess.Popen('ip neigh show dev '+self.LAN_INTERFACE, shell=True, stdout=subprocess.PIPE)
-		output = proc.communicate()
-		lines = output[0].split('\n')
-
+		proc    = subprocess.Popen('ip neigh show dev '+self.filter.LAN_INTERFACE, shell=True, stdout=subprocess.PIPE)
+		output  = proc.communicate()
+		lines   = output[0].split('\n')
 		clients = dict()
 
 		for l in lines:
