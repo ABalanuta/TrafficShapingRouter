@@ -12,15 +12,15 @@ class Filter():
 	LAN_INTERFACE	= "eth0"
 	WAN_INTERFACE 	= "eth1"
 
-	DEF_HTB_RATE	= "15Mbit"	#Rate of the def bucket
+	DEF_HTB_RATE	= "20Mbit"	#Rate of the def bucket
 	USER_UP_RATE 	= "2Mbit"	
-	USER_DOWN_RATE 	= "5Mbit"
+	USER_DOWN_RATE 	= "10Mbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
 
 	def console(self, exe):
-		print exe
+		#print exe
 		subprocess.call(exe, shell=True)
 
 	def destroy_tc_rules(self):
@@ -122,8 +122,8 @@ class TShapper(Thread):
 	TOKENS 					= list()
 	DEVICES 				= dict()
 
-	SLEEP_INTERVAL  		= 0.75		#Seconds
-	OLD_DEVICES_TIMEOUT 	= 3 		#Seconds
+	SLEEP_INTERVAL  		= 1		#Seconds
+	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
@@ -163,7 +163,7 @@ class TShapper(Thread):
 		self.filter.destroy_tc_rules()
 
 	def update(self):
-		print "Update"
+		#print "Update"
 		
 		updated_devices = self.get_devices_adresses()
 
@@ -178,7 +178,7 @@ class TShapper(Thread):
 	def clean_old_devices(self):
 		for device_mac, obj in self.DEVICES.items():
 			if (datetime.now() - obj["last_seen"]).total_seconds() > self.OLD_DEVICES_TIMEOUT:
-				print "Delete Client: "+device_mac
+				#print "Delete Client: "+device_mac
 				obj = self.DEVICES[device_mac]
 				token = obj["token"]
 
@@ -225,13 +225,13 @@ class TShapper(Thread):
 			self.DEVICES[device_mac]["last_seen"] = datetime.now()
 
 			if len(ips_to_add) > 0:
-				print "New IPs "+str(ips_to_add)+" for MAC "+device_mac
+				#print "New IPs "+str(ips_to_add)+" for MAC "+device_mac
 				for ip in ips_to_add:
 					self.filter.tc_add_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
 					self.active_filters += 2
 
 			if len(ips_to_delete) > 0:
-				print "Delete IPs "+str(ips_to_delete)+" for MAC "+device_mac
+				#print "Delete IPs "+str(ips_to_delete)+" for MAC "+device_mac
 				for ip in ips_to_delete:
 					self.filter.tc_del_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
 					self.active_filters -= 2
