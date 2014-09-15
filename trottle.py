@@ -180,7 +180,7 @@ class TShapper(Thread):
 			self.MAX_DEVICES['Number'] = len(self.DEVICES)
 			self.MAX_DEVICES['Time'] = datetime.now()
 
-		print "Current Clients:"+str(len(self.DEVICES))+"/Max:"+self.MAX_DEVICES['Number']+" at "+str(self.MAX_DEVICES['Number'])+"TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
+		print "Current Clients:"+str(len(self.DEVICES))+"/Max:"+str(self.MAX_DEVICES['Number'])+" at "+str(self.MAX_DEVICES['Number'])+"TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
 
 
 	def clean_old_devices(self):
