@@ -121,6 +121,10 @@ class TShapper(Thread):
 	N_TOKENS        		= 9000
 	TOKENS 					= list()
 	DEVICES 				= dict()
+	MAX_DEVICES 			= {
+								'Number': 0,
+								'Time'  : datetime.now()
+								}
 
 	SLEEP_INTERVAL  		= 1		#Seconds
 	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
@@ -172,7 +176,11 @@ class TShapper(Thread):
 
 		self.clean_old_devices()
 
-		print "Clients:"+str(len(self.DEVICES))+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
+		if len(self.DEVICES) > self.MAX_DEVICES['Number']:
+			self.MAX_DEVICES['Number'] = len(self.DEVICES)
+			self.MAX_DEVICES['Time'] = datetime.now()
+
+		print "Current Clients:"+str(len(self.DEVICES))+"/Max:"+self.MAX_DEVICES['Number']+" at "+str(self.MAX_DEVICES['Number'])+"TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
 
 
 	def clean_old_devices(self):
