@@ -6,25 +6,26 @@ import subprocess
 from time import sleep
 from threading import Thread
 from datetime import datetime
+from termcolor import colored, cprint
 
 class Filter():
 
 	LAN_INTERFACE	= "eth0"
 	WAN_INTERFACE 	= "eth1"
 
-	DEF_HTB_RATE	= "20Mbit"	#Rate of the def bucket
+	DEF_HTB_RATE	= "100Mbit"	#Rate of the def bucket
 	USER_UP_RATE 	= "2Mbit"	
-	USER_DOWN_RATE 	= "10Mbit"
+	USER_DOWN_RATE 	= "5Mbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
 
 	def console(self, exe):
-		#print exe
-		subprocess.call(exe, shell=True)
+		cprint("\t"+exe, 'cyan')
+		subprocess.call("nice -n10 "+exe, shell=True)
 
 	def destroy_tc_rules(self):
-		print "Destroy Rules"
+		cprint("Destroy Rules", 'red')
 
 		#Delete rules
 		self.console('tc qdisc del dev '+self.WAN_INTERFACE+' root')
@@ -46,9 +47,6 @@ class Filter():
 	def tc_add_device(self, obj):
 		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_RATE+' prio 0')
 		self.console('tc class add dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_UP_RATE+' ceil '+self.USER_UP_RATE+' prio 0')
-
-	def tc_del_device(self, obj):
-		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_RATE+' prio 0')
 
 	def tc_add_filter(self, token, ip, obj):
 		#IPv6
@@ -119,24 +117,25 @@ class Filter():
 class TShapper(Thread):
 
 	N_TOKENS        		= 9000
-	TOKENS 					= list()
-	DEVICES 				= dict()
+	TOKENS 				= list()
+	DEVICES 			= dict()
 	MAX_DEVICES 			= {
-								'Number': 0,
-								'Time'  : datetime.now()
-								}
+						'Number': 0,
+						'Time'  : datetime.now()
+					}
 
-	SLEEP_INTERVAL  		= 1		#Seconds
-	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
+	SLEEP_INTERVAL  	= 5		#Seconds
+	OLD_DEVICES_TIMEOUT 	= 60 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
 		self.stopped = False
 		self.active_filters = 0
-		self.speed = {	'Down'			: 0,
-						'Up'			: 0,
-						'Last_Update'	: datetime.now()
-					}
+		self.speed = {	'Down'		: 0,
+				'Up'		: 0,
+				'Last_Update'	: datetime.now()
+				}
+
 		self.filter = Filter()
 		self.generate_tokens()
 
@@ -152,6 +151,10 @@ class TShapper(Thread):
 
 	def stop(self):
 		self.stopped = True
+		
+		#Deletes the TC Rules
+		self.filter.destroy_tc_rules()
+
 
 	def run(self):
 
@@ -163,11 +166,8 @@ class TShapper(Thread):
 			self.update()
 			sleep(self.SLEEP_INTERVAL)
 
-		#Deletes the TC Rules
-		self.filter.destroy_tc_rules()
-
 	def update(self):
-		#print "Update"
+		#cprint("Update", 'white')
 		
 		updated_devices = self.get_devices_adresses()
 
@@ -180,13 +180,13 @@ class TShapper(Thread):
 			self.MAX_DEVICES['Number'] = len(self.DEVICES)
 			self.MAX_DEVICES['Time'] = datetime.now()
 
-		print "Current Clients/Max:"+str(len(self.DEVICES))+"/"+str(self.MAX_DEVICES['Number'])+" at "+str(self.MAX_DEVICES['Time'])+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed()
+		cprint("Current Clients/Max:"+str(len(self.DEVICES))+"/"+str(self.MAX_DEVICES['Number'])+" at "+str(self.MAX_DEVICES['Time'])+" TokensLeft:"+str(len(self.TOKENS))+" ActiveFilters:"+str(self.active_filters)+self.get_speed(), 'green')
 
 
 	def clean_old_devices(self):
 		for device_mac, obj in self.DEVICES.items():
 			if (datetime.now() - obj["last_seen"]).total_seconds() > self.OLD_DEVICES_TIMEOUT:
-				#print "Delete Client: "+device_mac
+				cprint("Delete Client: "+device_mac, 'red')
 				obj = self.DEVICES[device_mac]
 				token = obj["token"]
 
@@ -218,6 +218,8 @@ class TShapper(Thread):
 			self.DEVICES[device_mac] = obj
 
 			self.filter.tc_add_device(obj)
+			cprint("Add Client: "+device_mac, 'yellow')
+
 			for ip in ips:
 				self.filter.tc_add_filter(obj['token'], ip, obj)
 				self.active_filters += 2
@@ -233,13 +235,13 @@ class TShapper(Thread):
 			self.DEVICES[device_mac]["last_seen"] = datetime.now()
 
 			if len(ips_to_add) > 0:
-				#print "New IPs "+str(ips_to_add)+" for MAC "+device_mac
+				cprint("New IPs "+str(ips_to_add)+" for MAC "+device_mac, 'blue')
 				for ip in ips_to_add:
 					self.filter.tc_add_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
 					self.active_filters += 2
 
 			if len(ips_to_delete) > 0:
-				#print "Delete IPs "+str(ips_to_delete)+" for MAC "+device_mac
+				cprint("Delete IPs "+str(ips_to_delete)+" for MAC "+device_mac, 'blue')
 				for ip in ips_to_delete:
 					self.filter.tc_del_filter(self.DEVICES[device_mac]['token'], ip, self.DEVICES[device_mac])
 					self.active_filters -= 2
