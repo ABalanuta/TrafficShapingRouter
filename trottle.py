@@ -3,6 +3,7 @@
 import sys
 import signal
 import subprocess
+import logging
 from time import sleep
 from threading import Thread
 from datetime import datetime
@@ -14,16 +15,18 @@ class Filter():
 	WAN_INTERFACE 	= "eth1"
 
 	DEF_HTB_RATE	= "100Mbit"	#Rate of the def bucket
-	USER_UP_RATE 	= "2Mbit"	
-	USER_DOWN_RATE 	= "5Mbit"
+	USER_UP_RATE 	= "2048kbit"	
+	USER_DOWN_RATE 	= "5240Kbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
 
 	def console(self, exe):
 		cprint("\t"+exe, 'cyan')
-		subprocess.call("nice -n10 "+exe, shell=True)
-
+		#logging.debug("\t"+exe)
+		proc    = subprocess.Popen("nice -n10 "+exe, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output  = proc.communicate()
+		cprint("\tOut: "+str(len(output))+":"+str(output), 'white')
 	def destroy_tc_rules(self):
 		cprint("Destroy TC Rules", 'red')
 
@@ -58,7 +61,7 @@ class Filter():
 			self.tc_add_filter_IPv4(token, ip, obj)
 			
 	def tc_add_filter_IPv4(self, token, ip, obj):
-		cprint("Add IPv4 Filter: "+ip+" for "+obj["mac"], 'yellow')
+		cprint("\t Add IPv4 Filter: "+ip+" for "+obj["mac"], 'yellow')
 		self.console('tc filter add dev '+self.LAN_INTERFACE+' protocol ip parent 1:0 prio 0 u32 match ip dst '+ip+' flowid 1:'+str(token))
 		pref = self.tc_get_new_filter_pref(self.LAN_INTERFACE)
 		obj["prefs"]["lan"][ip] = pref
@@ -70,7 +73,7 @@ class Filter():
 		self.wan_ip_prefs |= pref
 
 	def tc_add_filter_IPv6(self, token, ip, obj):
-		cprint("Add IPv6 Filter: "+ip+" for "+obj["mac"], 'yellow')
+		cprint("\t Add IPv6 Filter: "+ip+" for "+obj["mac"], 'yellow')
 		self.console('tc filter add dev '+self.LAN_INTERFACE+' protocol ipv6 parent 1:0 prio 0 u32 match ip6 dst '+ip+' flowid 1:'+str(token))
 		pref = self.tc_get_new_filter_pref(self.LAN_INTERFACE)
 		obj["prefs"]["lan"][ip] = pref
@@ -83,7 +86,7 @@ class Filter():
 
 	def tc_del_filter(self, token, ip, obj):
 
-		cprint("Del Filter: "+ip+" for "+obj["mac"], 'yellow')
+		cprint("\t Del Filter: "+ip+" for "+obj["mac"], 'yellow')
 
 		#Delete LAN filters
 		for pref in obj["prefs"]["lan"][ip]:
@@ -130,11 +133,13 @@ class TShapper(Thread):
 						'Time'  : datetime.now()
 					}
 
-	SLEEP_INTERVAL  	= 5		#Seconds
+	SLEEP_INTERVAL  	= 0.1		#Seconds
 	OLD_DEVICES_TIMEOUT 	= 60 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
+		logging.basicConfig(filename='trottle.log',level=logging.DEBUG)
+		logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
 		self.stopped = False
 		self.active_filters = 0
 		self.speed = {	'Down'		: 0,
