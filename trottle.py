@@ -14,19 +14,22 @@ class Filter():
 	LAN_INTERFACE	= "eth0"
 	WAN_INTERFACE 	= "eth1"
 
-	DEF_HTB_RATE	= "100Mbit"	#Rate of the def bucket
-	USER_UP_RATE 	= "2048kbit"	
-	USER_DOWN_RATE 	= "5240Kbit"
+	DEF_HTB_RATE		= "100Mbit"	#Rate of the def bucket
+	USER_UP_RATE 		= "2100kbit"	
+	USER_UP_CEIL_RATE 	= "2400kbit"	
+	USER_DOWN_RATE 		= "5300Kbit"
+	USER_DOWN_CEIL_RATE 	= "5800Kbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
 
 	def console(self, exe):
 		cprint("\t"+exe, 'cyan')
-		#logging.debug("\t"+exe)
+		logging.debug(exe)
 		proc    = subprocess.Popen("nice -n10 "+exe, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output  = proc.communicate()
 		cprint("\tOut: "+str(len(output))+":"+str(output), 'white')
+		logging.debug(str(output))
 	def destroy_tc_rules(self):
 		cprint("Destroy TC Rules", 'red')
 
@@ -49,8 +52,8 @@ class Filter():
 	#Creates a new TC Filter Rule
 	def tc_add_device(self, obj):
 		cprint("Add Device: "+obj["mac"], 'yellow')
-		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_RATE+' prio 0')
-		self.console('tc class add dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_UP_RATE+' ceil '+self.USER_UP_RATE+' prio 0')
+		self.console('tc class add dev '+self.LAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_DOWN_RATE+' ceil '+self.USER_DOWN_CEIL_RATE+' prio 1')
+		self.console('tc class add dev '+self.WAN_INTERFACE+' parent 1:0 classid 1:'+str(obj['token'])+' htb rate '+self.USER_UP_RATE+' ceil '+self.USER_UP_CEIL_RATE+' prio 1')
 
 	def tc_add_filter(self, token, ip, obj):
 		#IPv6
@@ -125,7 +128,7 @@ class Filter():
 
 class TShapper(Thread):
 
-	N_TOKENS        		= 9000
+	N_TOKENS        		= 2500
 	TOKENS 				= list()
 	DEVICES 			= dict()
 	MAX_DEVICES 			= {
@@ -133,8 +136,8 @@ class TShapper(Thread):
 						'Time'  : datetime.now()
 					}
 
-	SLEEP_INTERVAL  	= 0.1		#Seconds
-	OLD_DEVICES_TIMEOUT 	= 60 		#Seconds
+	SLEEP_INTERVAL  	= 0.5		#Seconds
+	OLD_DEVICES_TIMEOUT 	= 360 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
