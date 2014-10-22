@@ -17,33 +17,44 @@ class KernelError(Exception):
 	def __str__(self):
 		return repr(self.value)
 
+class DeviceError(Exception):
+
+	def __init__(self, value):
+		self.value = value
+
+	def __str__(self):
+		return repr(self.value)
+
 class Filter():
 
 	LAN_INTERFACE	= "eth0"
 	WAN_INTERFACE 	= "eth1"
 
 	DEF_HTB_RATE		= "100Mbit"	#Rate of the def bucket
-	USER_UP_RATE 		= "2100kbit"	
-	USER_UP_CEIL_RATE 	= "2400kbit"	
-	USER_DOWN_RATE 		= "5300Kbit"
-	USER_DOWN_CEIL_RATE = "5800Kbit"
+	USER_UP_RATE 		= "1050kbit"	
+	USER_UP_CEIL_RATE 	= "1200kbit"	
+	USER_DOWN_RATE 		= "2100Kbit"
+	USER_DOWN_CEIL_RATE 	= "2400Kbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
 
 	def console(self, exe):
-		cprint("\t"+exe, 'cyan')
+		#cprint("\t"+exe, 'cyan')
 		logging.debug("\tIN: "+str(exe))
 
 		proc    = subprocess.Popen("nice -n10 "+exe, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		output  = proc.communicate()
 		
-		cprint("\tOut: "+str(len(output))+":"+str(output), 'white')
+		#cprint("\tOut: "+str(len(output))+":"+str(output), 'white')
 		logging.debug(str(output))
 
 		for x in output:
 			if 'We have an error talking to the kernel' in x:
 				raise KernelError(datetime.now())
+
+			#if 'Device or resource busy' in x:
+			#	raise DeviceError(exe)					
 
 	def destroy_tc_rules(self):
 		cprint("Destroy TC Rules", 'red')
@@ -159,10 +170,10 @@ class Filter():
 
 class TShapper(Thread):
 
-	N_TOKENS        		= 2500
-	SLEEP_INTERVAL  		= 2			#Seconds
+	N_TOKENS        	= 8000
+	SLEEP_INTERVAL  	= 0.3		#Seconds
 	FILTER_DELETE_INTERVAL	= 30 		#Seconds		
-	OLD_DEVICES_TIMEOUT 	= 360 		#Seconds
+	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
 
 	def __init__(self):
 		Thread.__init__(self)
@@ -225,7 +236,9 @@ class TShapper(Thread):
 			try:
 				self.update()
 			except KernelError as e:
+				cprint("KERNEL ERROR: Restarting ", 'red')
 				logging.warning("KernelError:"+str(e))
+				sleep(2)
 				self.restart()
 
 			sleep(self.SLEEP_INTERVAL)
@@ -244,13 +257,13 @@ class TShapper(Thread):
 			self.max_devices['Number'] = len(self.devices)
 			self.max_devices['Time'] = datetime.now()
 
-		cprint("Current Clients/Max:"+str(len(self.devices))+"/"+str(self.max_devices['Number'])+" at "+str(self.max_devices['Time'])+" TokensLeft:"+str(len(self.tokens))+" ActiveFilters:"+str(self.active_filters)+self.get_speed(), 'green')
+		cprint("Current Clients/Max:"+str(len(self.devices))+"/"+str(self.max_devices['Number'])+" at "+str(self.max_devices['Time'])+" TokensUsed:"+str(self.N_TOKENS - len(self.tokens))+" ActiveFilters:"+str(self.active_filters)+self.get_speed(), 'green')
 
 
 	def clean_old_devices(self):
 		for device_mac, obj in self.devices.items():
 			if (datetime.now() - obj["last_seen"]).total_seconds() > self.OLD_DEVICES_TIMEOUT:
-				obj = self.devices[device_mac]
+				#obj = self.devices[device_mac]
 				token = obj["token"]
 
 				#Delete Filters
@@ -260,26 +273,21 @@ class TShapper(Thread):
 
 				#Delete Class
 				self.filter.tc_del_class(token, obj)
-
 				del self.devices[device_mac]
 				self.release_token(token)
-				
 
 	def update_device(self, device_mac, ips):
 		
 		#Add new Device
 		if device_mac not in self.devices.keys():
 			obj	  = { 	"mac":device_mac,
-						"token":self.get_token(),
-						"ips":ips,
-						"last_seen":datetime.now(),
-						"prefs": {
-									"lan": dict(),
-									"wan": dict()
-								}
+					"token":self.get_token(),
+					"ips":ips,
+					"last_seen":datetime.now(),
+					"prefs": { "lan": dict(), "wan": dict() }
 					}
-			self.devices[device_mac] = obj
 
+			self.devices[device_mac] = obj
 			self.filter.tc_add_device(obj)
 
 			for ip in ips:
@@ -301,13 +309,13 @@ class TShapper(Thread):
 					self.filter.tc_add_filter(self.devices[device_mac]['token'], ip, self.devices[device_mac])
 					self.active_filters += 2
 
-			if len(ips_to_delete) > 0 and self.filter_delete_counter > self.FILTER_DELETE_INTERVAL::
-				for ip in ips_to_delete:
-					self.filter.tc_del_filter(self.devices[device_mac]['token'], ip, self.devices[device_mac])
-					self.active_filters -= 2
-				self.filter_delete_counter = 0
-			else:
-				self.filter_delete_counter += 1
+			#if len(ips_to_delete) > 0 and self.filter_delete_counter > self.FILTER_DELETE_INTERVAL:
+			#	for ip in ips_to_delete:
+			#		self.filter.tc_del_filter(self.devices[device_mac]['token'], ip, self.devices[device_mac])
+			#		self.active_filters -= 2
+			#	self.filter_delete_counter = 0
+			#else:
+			#	self.filter_delete_counter += 1
 
 
 	def print_devices(self):
