@@ -33,8 +33,8 @@ class Filter():
 	DEF_HTB_RATE		= "100Mbit"	#Rate of the def bucket
 	USER_UP_RATE 		= "1050kbit"	
 	USER_UP_CEIL_RATE 	= "1200kbit"	
-	USER_DOWN_RATE 		= "2100Kbit"
-	USER_DOWN_CEIL_RATE 	= "2400Kbit"
+	USER_DOWN_RATE 		= "4100Kbit"
+	USER_DOWN_CEIL_RATE 	= "4400Kbit"
 
 	wan_ip_prefs	= set()
 	lan_ip_prefs	= set()
