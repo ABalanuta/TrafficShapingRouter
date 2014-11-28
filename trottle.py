@@ -10,18 +10,21 @@ from datetime import datetime
 from termcolor import colored, cprint
 from filter import Filter
 from errors import DeviceError, KernelError
+from snmp_macs import SNMPDetector
 
 class TShapper(Thread):
 
-	N_TOKENS        	= 8000
-	SLEEP_INTERVAL  	= 2		#Seconds
+	N_TOKENS        		= 8000
+	SLEEP_INTERVAL  		= 2		#Seconds
 	FILTER_DELETE_INTERVAL	= 30 		#Seconds
 	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
+	USE_SNMP				= True
 
 	def __init__(self):
 		Thread.__init__(self)
 		logging.basicConfig(filename='trottle.log',level=logging.DEBUG)
-		logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+		logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',\
+						 	datefmt='%m/%d/%Y %I:%M:%S %p')
 
 		self.stopped = False
 		self.active_filters = 0
@@ -40,6 +43,9 @@ class TShapper(Thread):
 
 		self.filter = Filter()
 		self.generate_tokens()
+		if self.USE_SNMP:
+			self.SNMPDetector = SNMPDetector()
+			self.SNMPDetector.start()
 
 	def generate_tokens(self):
 		for i in range(1, self.N_TOKENS+1):
@@ -56,6 +62,9 @@ class TShapper(Thread):
 
 		#Deletes the TC Rules
 		self.filter.destroy_tc_rules()
+
+		if self.USE_SNMP:
+			self.SNMPDetector.stop()
 
 	def restart(self):
 		#Deletes the TC Rules
@@ -88,8 +97,11 @@ class TShapper(Thread):
 	def update(self):
 		#cprint("Update", 'white')
 
-		updated_devices = self.get_devices_adresses()
-
+		if self.USE_SNMP:
+			updated_devices = self.get_devices_adresses_from_snmp()
+		else:
+			updated_devices = self.get_devices_adresses()
+		
 		for device_mac, ips in updated_devices.items():
 			self.update_device(device_mac, ips)
 
@@ -203,11 +215,10 @@ class TShapper(Thread):
 					clients[mac] = [ip]
 				else:
 					clients[mac].append(ip)
-
 		return clients
 
 	def get_devices_adresses_from_snmp(self):
-		retunr None
+		return self.SNMPDetector.get_adresses("2.4Ghz")
 
 	def get_speed(self):
 		proc    = subprocess.Popen('ifconfig '+self.filter.WAN_INTERFACE+\

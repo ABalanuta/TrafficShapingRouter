@@ -13,26 +13,27 @@ import threading
 from datetime import datetime
 from time import sleep
 
-class WifiDetector(threading.Thread):
+class SNMPDetector(threading.Thread):
 
-	DEBUG 		= True
+	DEBUG 		= False
 	IP_RANGE 	= ('172.20.3.', 1, 70)	# APs ip Range 172.20.3.1-60
-	SCAN_DELAY 	= 3					# Time in seconds
+	SCAN_DELAY 	= 2						# Time in seconds
 
 	def __init__(self):
 		if self.DEBUG:
-			print "WifiDetector.init()"
+			print "SNMPDetector.init()"
 		threading.Thread.__init__(self)
 		self.stopped = True
+		self.addreses = dict()
 
 	def stop(self):
 		if self.DEBUG:
-			print "WifiDetector.stop()"
+			print "SNMPDetector.stop()"
 		self.stopped = True
 
 	def run(self):
 		if self.DEBUG:
-			print "WifiDetector.run()"
+			print "SNMPDetector.run()"
 		self.stopped = False
 
 		while not self.stopped:
@@ -43,21 +44,24 @@ class WifiDetector(threading.Thread):
 
 	def update(self):
 		if self.DEBUG:
-			print "WifiDetector.update()"
+			print "SNMPDetector.update()"
 
-		counters = [0, 0]
+		collection = {
+						"2.4Ghz" : dict(),
+						"5.0Ghz" : dict()
+					}
+
 		for x in range(int(self.IP_RANGE[1]), int(self.IP_RANGE[2])+1):
 			ip = self.IP_RANGE[0]+str(x)
 			d = self.get_mac_ip(ip)
-			for key, values in d.items():
-				if key == '2.4Ghz':
-					counters[0] += len(values)
-				elif key == '5.0Ghz':
-					counters[1] += len(values)
-		print "2.4Ghz/5.0Ghz/Total/5GhzRatio:", counters[0], "/", counters[1],\
-		 	  "/", counters[0]+counters[1], "/", \
-			  float(counters[1])/float(counters[0]+counters[1])
+			for fhz in d:
+				if len(d[fhz]) > 0:
+					for x in d[fhz]:
+						x_mac, x_ip = x.items()[0]
+						if not x_ip == "0.0.0.0":
+							collection[fhz][x_mac] = [x_ip]
 
+		self.addreses = collection
 
 	def convert_mac(self, var):
 		mac = var.split('.')
@@ -81,7 +85,8 @@ class WifiDetector(threading.Thread):
 	def get_mac_ip(self, ip):
 
 		oid = '.1.3.6.1.4.1.9.9.273.1.2.1.1.16'
-		session = netsnmp.Session( DestHost=ip, Version=2, Community='public',Timeout=10000, Retries=1, UseNumeric=1)
+		session = netsnmp.Session( DestHost=ip, Version=2, Community='public',Timeout=10000,\
+								   Retries=1, UseNumeric=1)
 		session.UseLongNames = 1
 		vars = netsnmp.VarList( netsnmp.Varbind(oid) )
 		session.walk(vars)
@@ -98,14 +103,21 @@ class WifiDetector(threading.Thread):
 				ip += str(int(c.encode("hex"), 16))+"."
 			ip = ip[:-1]
 			#print mac, ch, ip
-			d[ch].append([mac, ip])
+			d[ch].append({mac:ip})
 
 		return d
+
+
+	def get_adresses(self, frequency):
+		if frequency in self.addreses.keys():
+			return self.addreses[frequency]
+		else:
+			return dict()
 
 ##Executed if only is the main app
 if __name__ == '__main__':
 
-	wd = WifiDetector()
+	wd = SNMPDetector()
 
 	try:
 		wd.start()
