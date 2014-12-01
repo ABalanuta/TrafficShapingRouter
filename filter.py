@@ -6,13 +6,14 @@ from time import sleep
 from threading import Thread
 from datetime import datetime
 from termcolor import colored, cprint
+from errors import DeviceError, KernelError
 
 class Filter():
 
     LAN_INTERFACE	= "eth0"
     WAN_INTERFACE 	= "eth1"
 
-    DEF_HTB_RATE		= "300Mbit"	#Rate of the def bucket
+    DEF_HTB_RATE		= "1000Mbit"	#Rate of the def bucket
     USER_UP_RATE 		= "1050kbit"
     USER_UP_CEIL_RATE 	= "1200kbit"
     USER_DOWN_RATE 		= "4100Kbit"
