@@ -17,7 +17,7 @@ class SNMPDetector(threading.Thread):
 
 	DEBUG 		= False
 	IP_RANGE 	= ('172.20.3.', 1, 70)	# APs ip Range 172.20.3.1-60
-	SCAN_DELAY 	= 2						# Time in seconds
+	SCAN_DELAY 	= 10					# Time in seconds
 
 	def __init__(self):
 		if self.DEBUG:
@@ -62,6 +62,7 @@ class SNMPDetector(threading.Thread):
 							collection[fhz][x_mac] = [x_ip]
 
 		self.addreses = collection
+		#print "New:"+str(len(collection['2.4Ghz']))
 
 	def convert_mac(self, var):
 		mac = var.split('.')
@@ -85,8 +86,8 @@ class SNMPDetector(threading.Thread):
 	def get_mac_ip(self, ip):
 
 		oid = '.1.3.6.1.4.1.9.9.273.1.2.1.1.16'
-		session = netsnmp.Session( DestHost=ip, Version=2, Community='public',Timeout=10000,\
-								   Retries=1, UseNumeric=1)
+		session = netsnmp.Session( DestHost=ip, Version=2, Community='public',\
+								   Timeout=1000000, Retries=1, UseNumeric=1)
 		session.UseLongNames = 1
 		vars = netsnmp.VarList( netsnmp.Varbind(oid) )
 		session.walk(vars)
@@ -110,6 +111,8 @@ class SNMPDetector(threading.Thread):
 
 	def get_adresses(self, frequency):
 		if frequency in self.addreses.keys():
+			print "2.4Ghz/5.0Ghz :",\
+				  len(self.addreses['2.4Ghz']), "/", len(self.addreses['5.0Ghz'])
 			return self.addreses[frequency]
 		else:
 			return dict()

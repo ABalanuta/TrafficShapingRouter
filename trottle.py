@@ -18,7 +18,7 @@ class TShapper(Thread):
 	SLEEP_INTERVAL  		= 2		#Seconds
 	FILTER_DELETE_INTERVAL	= 30 		#Seconds
 	OLD_DEVICES_TIMEOUT 	= 300 		#Seconds
-	USE_SNMP				= True
+	USE_SNMP				= False
 
 	def __init__(self):
 		Thread.__init__(self)
